@@ -1,0 +1,80 @@
+; Copyright (c) Magic Mouse Control contributors.
+; License: MIT
+;
+; Extension INF for the observation filter.
+;
+; Why an extension INF and not a function-driver INF:
+;   * the BTHENUM devnode already has HidBth as its function driver and
+;     applewirelessmouse as a lower filter; replacing either of them would
+;     break native scrolling,
+;   * an extension INF may install a *filter service* (but never a function
+;     driver - no SPSVCINST_ASSOCSERVICE here).
+;
+; Why AddReg instead of the declarative AddFilter:
+;   * AddFilter with FilterPosition=Lower inserts in "effectively arbitrary
+;     order" when the base INF defines no filter levels (Apple's does not),
+;   * we must be exactly *below* applewirelessmouse, and the only deterministic
+;     way is to append to LowerFilters: the list is ordered top -> bottom, so
+;     the appended entry sits closest to BthEnum.
+;   * 0x00010008 is REG_MULTI_SZ with append semantics.
+
+[Version]
+Signature       = "$WINDOWS NT$"
+Class           = Extension
+ClassGuid       = {e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+Provider        = %Provider%
+ExtensionId     = {a7d3c0f4-5b21-4e8a-9f6c-2d1b8e4a7c90}
+DriverVer       = 11/14/2026,0.1.0.0
+CatalogFile     = mmk.cat
+PnpLockdown     = 1
+
+[DestinationDirs]
+; Extension INFs must only use the DriverStore (DIRID 13); %12% is rejected
+; by InfVerif for universal/extension packages.
+DefaultDestDir  = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+mmk.sys = 1,,
+
+[Manufacturer]
+%MfgName% = MMK, NT$ARCH$.10.0...16299
+
+[MMK.NT$ARCH$.10.0...16299]
+%MMK.DeviceDesc% = MMK_Install, BTHENUM\{00001124-0000-1000-8000-00805F9B34FB}_VID&0001004C_PID&0269
+
+[MMK_Install.NT]
+CopyFiles = @mmk.sys
+
+[MMK_Install.NT.HW]
+AddReg = MMK_Filters
+
+[MMK_Filters]
+; Append "MMKFilter" to the existing LowerFilters value.
+HKR,,LowerFilters,0x00010008,"MMKFilter"
+
+[MMK_Install.NT.Services]
+; flags 0: this is a filter, NOT the function driver.
+AddService = MMKFilter, 0x00000000, MMK_Service
+
+[MMK_Service]
+DisplayName    = %MMK.ServiceDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START (never boot/system)
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %13%\mmk.sys
+
+[MMK_Install.NT.Wdf]
+KmdfService = MMKFilter, MMK_WdfSection
+
+[MMK_WdfSection]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+Provider         = "Magic Mouse Control"
+MfgName          = "Magic Mouse Control"
+DiskName         = "Magic Mouse Control Driver"
+MMK.DeviceDesc   = "Magic Mouse 2 observation filter"
+MMK.ServiceDesc  = "Magic Mouse 2 kernel tap"

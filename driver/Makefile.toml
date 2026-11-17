@@ -1,0 +1,51 @@
+extend = "target/rust-driver-makefile.toml"
+
+[config]
+load_script = '''
+#!@rust
+//! ```cargo
+//! [dependencies]
+//! wdk-build = "0.6.0"
+//! ```
+#![allow(unused_doc_comments)]
+
+// Copy wdk-build's shared makefile next to our build output. The upstream
+// loader creates a symlink, which fails with ERROR_PRIVILEGE_NOT_HELD on
+// Windows unless Developer Mode is enabled or the shell is elevated. A plain
+// copy produces the same build and works for every user. The copy is patched
+// so its embedded `path = "."` dependencies point at the wdk-build crate
+// instead of this `target` directory.
+use std::env;
+use std::fs;
+use std::path::Path;
+
+let metadata = wdk_build::cargo_make::get_cargo_metadata()?;
+let package = metadata
+    .packages
+    .iter()
+    .find(|package| package.name == "wdk-build")
+    .expect("wdk-build should be a build dependency");
+let source = Path::new(package.manifest_path.as_str())
+    .parent()
+    .expect("wdk-build manifest should have a parent")
+    .join("rust-driver-makefile.toml");
+let crate_dir = source
+    .parent()
+    .expect("the shared makefile should have a parent")
+    .to_string_lossy()
+    .replace('\\', "/");
+let content = fs::read_to_string(&source)?.replace(
+    "path = \".\"",
+    &format!("path = \"{crate_dir}\""),
+);
+
+let workspace = env::var("CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY")?;
+let destination = Path::new(&workspace)
+    .join("target")
+    .join("rust-driver-makefile.toml");
+
+fs::create_dir_all(destination.parent().expect("target should have a parent"))?;
+if fs::read_to_string(&destination).ok().as_deref() != Some(content.as_str()) {
+    fs::write(&destination, content)?;
+}
+'''
